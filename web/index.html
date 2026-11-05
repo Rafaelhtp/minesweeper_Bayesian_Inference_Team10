@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Minesweeper Bayesian</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#d9d2c3;          /* latar halaman */
+    --tan:#cbbd9f;         /* bingkai */
+    --tan-dark:#8f7f62;
+    --ink:#14101c;         /* hitam judul / HUD */
+    --hud:#2b2540;
+    --cell:36px;
+    --font:'Press Start 2P', ui-monospace, 'Courier New', monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);font-family:var(--font);-webkit-user-select:none;user-select:none}
+  body{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+
+  .app{container-type:inline-size;background:var(--tan);border:4px solid var(--ink);
+       border-radius:6px;overflow:visible;box-shadow:0 0 0 4px var(--tan-dark);position:relative}
+  .title{background:var(--ink);color:#fff;text-align:center;padding:2.6cqw 0 2.2cqw;
+         font-size:8.2cqw;line-height:1;letter-spacing:0;white-space:nowrap;overflow:hidden}
+  .body{padding:14px 18px 16px}
+
+  /* ---------- HUD ---------- */
+  .hud{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px}
+  .btn{width:38px;height:38px;border:0;border-radius:4px;background:var(--hud);cursor:pointer;
+       display:grid;place-items:center;padding:0;box-shadow:inset 0 -3px 0 #120f1f, inset 0 2px 0 #4a4266}
+  .btn:active{transform:translateY(1px)}
+  .btn svg{width:22px;height:22px}
+  .pill{height:38px;min-width:92px;padding:0 10px;border-radius:4px;background:var(--hud);color:#fff;
+        display:flex;align-items:center;justify-content:center;gap:8px;font-size:16px;
+        box-shadow:inset 0 -3px 0 #120f1f, inset 0 2px 0 #4a4266}
+  .pill svg{width:20px;height:20px}
+  .face{width:42px;height:42px;background:#e6a64a;box-shadow:inset 0 -3px 0 #a86c1c, inset 0 2px 0 #ffd48a}
+  .face svg{width:28px;height:28px}
+
+  /* ---------- papan ---------- */
+  .well{background:var(--tan-dark);padding:5px;border-radius:5px;
+        box-shadow:inset 0 0 0 3px #2a2230;display:inline-block;margin:0 auto}
+  .center{display:flex;justify-content:center}
+  .grid{display:grid;gap:0;background:#2a2230}
+  .cell{width:var(--cell);height:var(--cell);position:relative;display:grid;place-items:center;
+        font-size:calc(var(--cell)*.46);color:#fff;line-height:1;
+        text-shadow:-1px -1px 0 #1b1624,1px -1px 0 #1b1624,-1px 1px 0 #1b1624,1px 1px 0 #1b1624,0 2px 0 #1b1624}
+  .cell svg{width:62%;height:62%;position:relative;z-index:1}
+
+  .h{background:#d4c7ad;border-radius:3px;margin:1px;width:calc(var(--cell) - 2px);height:calc(var(--cell) - 2px);
+     box-shadow:inset 3px 3px 0 #efe6d2, inset -3px -3px 0 #9b8c72;cursor:pointer}
+  .h:hover{background:#ddd1b9}
+  .r{background:#f4ecd8;box-shadow:inset 0 0 0 1px #e2d6ba}
+  .n1{background:#4fa3ee}.n2{background:#4ebc58}.n3{background:#f2bd2e}.n4{background:#ee6b82}
+  .n5{background:#f2883c}.n6{background:#34b3b0}.n7{background:#9a6be0}.n8{background:#8a8a99}
+  .r[class*=" n"]{box-shadow:inset 0 0 0 1px rgba(20,16,28,.28), inset 0 -3px 0 rgba(0,0,0,.18), inset 0 2px 0 rgba(255,255,255,.3)}
+  /* flag, bom, meledak: kotak abu-abu bermotif dither */
+  .f,.m{margin:1px;width:calc(var(--cell) - 2px);height:calc(var(--cell) - 2px);border-radius:3px;
+        background-color:#a9a39a;
+        background-image:linear-gradient(45deg,#8e8880 25%,transparent 25%,transparent 75%,#8e8880 75%),
+                         linear-gradient(45deg,#8e8880 25%,transparent 25%,transparent 75%,#8e8880 75%);
+        background-size:4px 4px;background-position:0 0,2px 2px;
+        box-shadow:inset 2px 2px 0 #c5bfb5, inset -2px -2px 0 #6f6a63}
+  .f{cursor:pointer}
+  .x{background:#e33b3b;box-shadow:inset 0 0 0 2px #8e1b1b;margin:1px;width:calc(var(--cell) - 2px);height:calc(var(--cell) - 2px);border-radius:3px}
+  .wrong::after{content:"";position:absolute;inset:18%;z-index:2;
+        background:linear-gradient(45deg,transparent 44%,#c0201f 44% 56%,transparent 56%),
+                   linear-gradient(-45deg,transparent 44%,#c0201f 44% 56%,transparent 56%)}
+  .hint{outline:3px solid #ffe14d;outline-offset:-3px;animation:blink .7s steps(2) infinite;z-index:3}
+  @keyframes blink{50%{outline-color:#ff8a00}}
+  .pct{position:absolute;bottom:2px;right:3px;font-size:calc(var(--cell)*.24);color:#3b3226;text-shadow:none;z-index:2}
+
+  .msg{margin-top:12px;min-height:30px;font-size:9px;line-height:1.6;color:#3b3226;text-align:center}
+
+  /* ---------- pengaturan ---------- */
+  .gearwrap{position:relative}
+  .pop{position:absolute;right:0;top:46px;z-index:10;white-space:nowrap;background:var(--ink);color:#fff;padding:10px;border-radius:6px;
+       display:none;flex-direction:column;gap:6px;font-size:9px;box-shadow:0 0 0 3px var(--tan-dark)}
+  .pop.open{display:flex}
+  .pop button{font:inherit;color:#fff;background:var(--hud);border:0;border-radius:3px;padding:8px 10px;cursor:pointer;text-align:left;
+              box-shadow:inset 0 -2px 0 #120f1f}
+  .pop button.on{background:#3d7a45}
+  .pop hr{border:0;border-top:2px dashed #4a4266;margin:2px 0;width:100%}
+
+  /* ---------- heatmap & panel perhitungan ---------- */
+  .legend{display:none;align-items:center;gap:8px;justify-content:center;margin-top:10px;font-size:8px;color:#3b3226}
+  .legend.on{display:flex}
+  .legend .bar{width:160px;height:10px;border:2px solid var(--ink);border-radius:2px;
+       background:linear-gradient(90deg,#4ebc58,#f2bd2e 50%,#e33b3b)}
+  .calc{display:none;margin-top:12px;background:var(--ink);color:#e8e4da;border-radius:6px;padding:10px 12px;
+        box-shadow:0 0 0 3px var(--tan-dark);font-size:8px;line-height:1.9;max-height:330px;overflow:auto;
+        -webkit-user-select:text;user-select:text}
+  .calc.on{display:block}
+  .calc h4{margin:8px 0 4px;font-weight:normal;color:#ffd23f;font-size:9px}
+  .calc h4:first-child{margin-top:0}
+  .calc table{border-collapse:collapse;width:100%;margin:4px 0}
+  .calc th,.calc td{border:2px solid #4a4266;padding:3px 5px;text-align:right}
+  .calc th{background:var(--hud);color:#fff}
+  .calc .eq{background:var(--hud);padding:6px 8px;border-radius:3px;margin:4px 0;word-break:break-all}
+  .calc .ok{color:#7ddc86}.calc .bad{color:#ff8a8a}
+  .calc .hl{outline:2px solid #ffe14d;outline-offset:-2px}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="title">MINESWEEPER</div>
+  <div class="body">
+    <div class="hud">
+      <button class="btn" id="bHint" title="Petunjuk dari AI Bayesian"></button>
+      <div class="pill"><span id="icClock"></span><span id="timer">000</span></div>
+      <button class="btn face" id="bFace" title="Game baru"></button>
+      <div class="pill"><span id="icFlag"></span><span id="flags">00</span></div>
+      <div class="gearwrap">
+        <button class="btn" id="bGear" title="Pengaturan"></button>
+        <div class="pop" id="pop">
+          <button data-d="beginner">BEGINNER 9x9</button>
+          <button data-d="intermediate">INTERMEDIATE 16x16</button>
+          <button data-d="expert">EXPERT 16x30</button>
+          <hr>
+          <button id="bAuto">AUTO-SOLVE: OFF</button>
+          <button id="bProb">TAMPIL % BOM: OFF</button>
+          <button id="bHeat">HEATMAP: OFF</button>
+          <button id="bCalc">HITUNGAN BAYES: OFF</button>
+        </div>
+      </div>
+    </div>
+    <div class="center"><div class="well"><div class="grid" id="grid"></div></div></div>
+    <div class="msg" id="msg">Klik sel mana saja untuk mulai.</div>
+    <div class="legend" id="legend"><span>0%</span><span class="bar"></span><span>100% BOM</span></div>
+    <div class="calc" id="calc"></div>
+  </div>
+</div>
+
+<script>
+/* ---------- sprite pixel-art (digambar dari teks) ---------- */
+function sprite(rows, pal){
+  const h=rows.length,w=rows[0].length;let r='';
+  rows.forEach((row,y)=>[...row].forEach((ch,x)=>{if(pal[ch])r+=`<rect x="${x}" y="${y}" width="1.02" height="1.02" fill="${pal[ch]}"/>`}));
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" shape-rendering="crispEdges">${r}</svg>`;
+}
+const SPR={
+ flagHud:sprite(["..rrr....","..rrrrr..","..rrrrrrr","..rrrrr..","..rrr....","..d......","..d......",".ddd.....","ddddd...."],{r:'#e23b3b',d:'#d9d3ea'}),
+ mine:sprite([".....k.....",".k...k...k.","..k.kkk.k..","...kkkkk...","..kkwkkkk..","kkkkkkkkkkk","..kkkkkkk..","...kkkkk...","..k.kkk.k..",".k...k...k.",".....k....."],{k:'#2d2a38',w:'#ffffff'}),
+ flag:sprite(["..rrr....","..rrrrr..","..rrrrrrr","..rrrrr..","..rrr....","..d......","..d......",".ddd.....","ddddd...."],{r:'#e23b3b',d:'#2a2438'}),
+ bulb:sprite(["...yyy...","..yyyyy..",".yywyyyy.",".yywyyyy.",".yyyyyyy.","..yyyyy..","...ggg...","...ddd...","...ggg...","....d...."],{y:'#ffd23f',w:'#fff6c0',g:'#9aa0aa',d:'#3a3a44'}),
+ clock:sprite(["..ooooo..",".offfffo.","offfhfffo","offfhfffo","offfhhhfo","offfffffo","offfffffo",".offfffo.","..ooooo.."],{o:'#e0a030',f:'#fff4c8',h:'#3a3a44'}),
+ gear:sprite(["....g....",".g.ggg.g.","..ggggg..",".ggg.ggg.","ggg...ggg",".ggg.ggg.","..ggggg..",".g.ggg.g.","....g...."],{g:'#e8e4da'}),
+ face:sprite(["...ooooo...",".oofffffoo.",".offfffffo.","offdfffdffo","offdfffdffo","offfffffffo","offdfffdffo","offfdddfffo",".offfffffo.",".oofffffoo.","...ooooo..."],{o:'#6b3f10',f:'#f7c46a',d:'#3a2410'}),
+ win:sprite(["...ooooo...",".oofffffoo.",".offfffffo.","oddddfddddo","ofddfffddfo","offfffffffo","offdfffdffo","offfdddfffo",".offfffffo.",".oofffffoo.","...ooooo..."],{o:'#6b3f10',f:'#f7c46a',d:'#3a2410'}),
+ lose:sprite(["...ooooo...",".oofffffoo.",".offfffffo.","ofdfffffdfo","offdfffdffo","offfffffffo","offfdddfffo","offdfffdffo",".offfffffo.",".oofffffoo.","...ooooo..."],{o:'#6b3f10',f:'#f7c46a',d:'#3a2410'}),
+};
+document.getElementById('bHint').innerHTML=SPR.bulb;
+document.getElementById('icClock').innerHTML=SPR.clock;
+document.getElementById('icFlag').innerHTML=SPR.flagHud;
+document.getElementById('bGear').innerHTML=SPR.gear;
+
+/* ---------- state & API ---------- */
+let S=null, hint=null, probs=null, showProb=false, showHeat=false, showCalc=false, sel=null, auto=false, autoTimer=null;
+let tickBase=0, tickAt=0, tickTimer=null;
+const $=id=>document.getElementById(id);
+
+async function api(path, body){
+  const r=await fetch(path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json'},
+                            body:body===undefined?undefined:JSON.stringify(body)});
+  const j=await r.json(); if(!r.ok) throw new Error(j.error||r.statusText); return j;
+}
+function apply(s){
+  S=s; hint=s.hint||null; probs=hint?hint.probs:null;
+  render();
+}
+async function act(path,body,keepHint){
+  if(!keepHint){hint=null;probs=null;}
+  try{
+    apply(await api(path,body));
+    if((showHeat||showCalc||showProb) && path!=='/api/hint' && path!=='/api/new' && S.started && S.status==='PLAYING'){
+      sel=null; apply(await api('/api/hint',{}));
+    }
+  }catch(e){$('msg').textContent='Error: '+e.message;}
+}
+
+/* ---------- render ---------- */
+function sizeFor(cols){
+  const avail=Math.min(window.innerWidth-70, 1100);
+  return Math.max(16, Math.min(40, Math.floor(avail/cols)));
+}
+function render(){
+  const {rows,cols}=S, cs=sizeFor(cols);
+  document.documentElement.style.setProperty('--cell',cs+'px');
+  $('app').style.width=Math.max(400, cols*cs+10+36+8)+'px';
+  const g=$('grid'); g.style.gridTemplateColumns=`repeat(${cols},var(--cell))`;
+  const over=S.status!=='PLAYING', lost=S.status==='LOST', won=S.status==='WON';
+  const mineSet=new Set(S.mine_cells.map(([r,c])=>r+','+c));
+  let html='';
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+    const v=S.state[r][c], key=r+','+c; let cls='cell', inner='';
+    if(v>=0){cls+=' r'+(v>0?' n'+v:''); inner=v>0?v:'';}
+    else if(v===-1){cls+=' x'; inner=SPR.mine;}
+    else if(v===-3){
+      cls+=' f'; inner=SPR.flag;
+      if(lost && !mineSet.has(key)) cls+=' wrong';
+    }else{ // tertutup
+      if(over && mineSet.has(key)){ if(won){cls+=' f';inner=SPR.flag;} else {cls+=' m';inner=SPR.mine;} }
+      else cls+=' h';
+    }
+    if(hint && hint.r===r && hint.c===c && !over) cls+=' hint';
+    let style='';
+    const pv=(probs&&v===-2&&!over)?probs[r][c]:null;
+    if(showHeat && pv!=null){ style=` style="background:${heat(pv)}"`; }
+    if((showProb||showHeat) && pv!=null) inner+=`<span class="pct">${Math.round(pv*100)}</span>`;
+    html+=`<div class="${cls}"${style} data-r="${r}" data-c="${c}">${inner}</div>`;
+  }
+  g.innerHTML=html;
+
+  $('flags').textContent=String(Math.max(0,S.mines-S.flags)).padStart(2,'0');
+  $('bFace').innerHTML=won?SPR.win:lost?SPR.lose:SPR.face;
+  tickBase=S.elapsed; tickAt=Date.now(); paintTimer();
+  clearInterval(tickTimer);
+  if(S.started && !over) tickTimer=setInterval(paintTimer,250);
+
+  document.querySelectorAll('.pop [data-d]').forEach(b=>b.classList.toggle('on',b.dataset.d===S.difficulty));
+  paintCalc();
+  if(won){ $('msg').textContent='MENANG! Semua sel aman terbuka.'; stopAuto(); }
+  else if(lost){ $('msg').textContent='KALAH... kena bom. Klik wajah untuk main lagi.'; stopAuto(); }
+  else if(hint){
+    $('msg').textContent = hint.reason==='FIRST_MOVE'
+      ? 'AI: mulai dari tengah papan.'
+      : `AI sarankan (${hint.r},${hint.c}) | P(bom) ${(hint.p*100).toFixed(1)}% | ${hint.reason}`;
+  }
+}
+function heat(p){ // hijau (aman) -> kuning -> merah (bom)
+  const A=[78,188,88],B=[242,189,46],C=[227,59,59];
+  const t=Math.max(0,Math.min(1,p)); let a,b,u;
+  if(t<.5){a=A;b=B;u=t/.5;}else{a=B;b=C;u=(t-.5)/.5;}
+  return `rgb(${a.map((x,i)=>Math.round(x+(b[i]-x)*u)).join(',')})`;
+}
+const pc=x=>(x*100).toFixed(2)+'%';
+function paintCalc(){
+  const el=$('calc'); $('legend').classList.toggle('on',showHeat);
+  el.classList.toggle('on',showCalc); if(!showCalc)return;
+  const E=hint&&hint.explain;
+  if(!E){el.innerHTML='Klik <b>bohlam</b> (petunjuk AI) atau buka sel pertama. Rincian perhitungan Bayes muncul di sini.';return;}
+  const key=sel?sel.r+','+sel.c:hint.r+','+hint.c, d=E.cells[key];
+  const [sr,sc]=key.split(',');
+  let o=`<h4>RINGKASAN PAPAN</h4>Total bom M=${E.total_mines} | flag/bom pasti=${E.flagged} | sisa bom R=${E.R}<br>`+
+    `Sel perbatasan f=${E.n_border} | sel interior N=${E.N} | komponen independen=${E.components.length}`+
+    (E.approx?' <span class="bad">(ada komponen diestimasi)</span>':'');
+  o+=`<h4>TEOREMA BAYES &mdash; SEL (${sr},${sc})</h4>`;
+  o+=`<div class="eq">P(B=1|E) = P(E|B=1)&middot;P(B=1) / P(E)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= (&Sigma; bobot konfigurasi yg sel ini bom) / Z</div>`;
+  if(!d){o+='Sel ini sudah terbuka / tidak ada data.';}
+  else if(d.type==='border'){
+    o+=`<table><tr><th>k bom di komponen</th><th>solusi dgn sel=bom</th><th>bobot W(k)</th><th>hasil</th></tr>`+
+      d.terms.map(t=>`<tr><td>${t.k}</td><td>${t.n_mine} / ${t.n_sol}</td><td>${t.w}</td><td>${t.term}</td></tr>`).join('')+`</table>`;
+    o+=`<div class="eq">P = ${d.num} / ${d.Z} = <b class="${d.p>.5?'bad':'ok'}">${pc(d.p)}</b></div>`;
+    const comp=E.components.find(c=>c.id===d.comp);
+    if(comp){
+      o+=`<h4>KONSTRAIN KOMPONEN ${comp.id} (${comp.cells.length} sel, ${comp.n_solutions} solusi)</h4>`+
+        comp.clues.map(c=>`Angka (${c.r},${c.c})=${c.value}: ${c.cells.map(x=>'('+x+')').join(' ')} berisi tepat ${c.need} bom<br>`).join('');
+    }
+  } else if(d.type==='interior'){
+    o+=`<div class="eq">${d.text}<br>P = <b>${pc(d.p)}</b></div>`;
+  } else {
+    o+=`<div class="eq">${d.text}<br>P = <b class="${d.p>.5?'bad':'ok'}">${pc(d.p)}</b></div>`;
+  }
+  o+=`<h4>PENGGABUNGAN KOMPONEN + PRIOR GLOBAL</h4>W = C(N, R&minus;m) = jumlah cara menaruh sisa bom di ${E.N} sel interior<table><tr><th>m (bom perbatasan)</th><th>cara di perbatasan</th><th>C(${E.N}, ${E.R}&minus;m)</th><th>bobot</th></tr>`+
+    E.mix.map(m=>`<tr><td>${m.m}</td><td>${m.ways}</td><td>${m.tail}</td><td>${m.weight}</td></tr>`).join('')+`</table>Z = &Sigma; bobot = <b>${E.Z}</b>`;
+  o+=`<h4>LANGKAH AMAN TERPILIH AI</h4>(${hint.r},${hint.c}) dengan P(bom)=${pc(hint.p)} &mdash; ${hint.reason}`;
+  el.innerHTML=o;
+}
+function paintTimer(){
+  const live=S&&S.started&&S.status==='PLAYING';
+  const t=live?tickBase+Math.floor((Date.now()-tickAt)/1000):(S?S.elapsed:0);
+  $('timer').textContent=String(Math.min(999,t)).padStart(3,'0');
+}
+
+/* ---------- input ---------- */
+const grid=$('grid'); let pressTimer=null, longPressed=false;
+function cellOf(e){const el=e.target.closest('.cell');return el?{r:+el.dataset.r,c:+el.dataset.c}:null;}
+grid.addEventListener('click',e=>{
+  if(longPressed){longPressed=false;return;}
+  const p=cellOf(e); if(p&&S.status==='PLAYING') act('/api/reveal',p);
+});
+grid.addEventListener('contextmenu',e=>{
+  e.preventDefault(); const p=cellOf(e); if(p&&S.status==='PLAYING') act('/api/flag',p);
+});
+grid.addEventListener('pointerdown',e=>{
+  if(e.pointerType!=='touch')return; const p=cellOf(e); if(!p)return;
+  pressTimer=setTimeout(()=>{longPressed=true;act('/api/flag',p);},450);
+});
+['pointerup','pointerleave','pointercancel'].forEach(ev=>grid.addEventListener(ev,()=>clearTimeout(pressTimer)));
+grid.addEventListener('mouseover',e=>{
+  const p=cellOf(e); if(!p||!probs||S.status!=='PLAYING')return;
+  const v=probs[p.r][p.c]; if(v!=null&&S.state[p.r][p.c]===-2){ $('msg').textContent=`(${p.r},${p.c}) P(bom) = ${(v*100).toFixed(1)}%`;
+    if(showCalc){sel=p;paintCalc();} }
+});
+
+$('bHint').onclick=()=>act('/api/hint',{},true);
+$('bFace').onclick=()=>{stopAuto();act('/api/new',{difficulty:S.difficulty});$('msg').textContent='Klik sel mana saja untuk mulai.';};
+$('bGear').onclick=e=>{e.stopPropagation();$('pop').classList.toggle('open');};
+document.addEventListener('click',e=>{if(!e.target.closest('#pop'))$('pop').classList.remove('open');});
+document.querySelectorAll('.pop [data-d]').forEach(b=>b.onclick=()=>{
+  stopAuto(); $('pop').classList.remove('open'); act('/api/new',{difficulty:b.dataset.d});
+  $('msg').textContent='Klik sel mana saja untuk mulai.';
+});
+function toggleBtn(id,label,on){$(id).textContent=label+(on?': ON':': OFF');$(id).classList.toggle('on',on);}
+$('bHeat').onclick=()=>{showHeat=!showHeat;toggleBtn('bHeat','HEATMAP',showHeat);
+  if(showHeat&&!probs&&S.started&&S.status==='PLAYING')act('/api/hint',{},true);else render();};
+$('bCalc').onclick=()=>{showCalc=!showCalc;toggleBtn('bCalc','HITUNGAN BAYES',showCalc);
+  if(showCalc&&!hint&&S.started&&S.status==='PLAYING')act('/api/hint',{},true);else render();};
+$('bProb').onclick=()=>{showProb=!showProb;$('bProb').textContent='TAMPIL % BOM: '+(showProb?'ON':'OFF');$('bProb').classList.toggle('on',showProb);
+  if(showProb&&!probs)act('/api/hint',{},true);else render();};
+
+/* ---------- auto-solve: AI bermain sampai selesai ---------- */
+function stopAuto(){auto=false;clearTimeout(autoTimer);$('bAuto').textContent='AUTO-SOLVE: OFF';$('bAuto').classList.remove('on');}
+async function autoStep(){
+  if(!auto||S.status!=='PLAYING')return stopAuto();
+  try{
+    const h=await api('/api/hint',{}); if(!h.hint)return stopAuto();
+    apply(h); await new Promise(res=>setTimeout(res,showProb?350:120));
+    if(!auto)return;
+    apply(await api('/api/reveal',{r:h.hint.r,c:h.hint.c}));
+    if(S.status==='PLAYING'&&auto) autoTimer=setTimeout(autoStep,showProb?250:100);
+  }catch(e){stopAuto();}
+}
+$('bAuto').onclick=()=>{
+  if(auto)return stopAuto();
+  auto=true;$('bAuto').textContent='AUTO-SOLVE: ON';$('bAuto').classList.add('on');$('pop').classList.remove('open');autoStep();
+};
+
+window.addEventListener('resize',()=>S&&render());
+api('/api/new',{difficulty:'beginner'}).then(apply);
+</script>
+</body>
+</html>
