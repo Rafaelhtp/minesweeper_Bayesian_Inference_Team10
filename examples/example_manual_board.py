@@ -7,7 +7,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src import BayesianMinesweeperSolver, parse_board_text  # noqa: E402
+from src.bayesian_solver import BayesianMinesweeperSolver  # noqa: E402
+from src.minesweeper_app import parse_board_text  # noqa: E402
 
 path = os.path.join(os.path.dirname(__file__), "sample_board.txt")
 with open(path, encoding="utf-8") as f:
