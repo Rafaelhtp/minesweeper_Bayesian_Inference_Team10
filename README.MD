@@ -56,8 +56,7 @@ pip install -r requirements.txt
 python src/web_app.py            # lalu buka http://127.0.0.1:8000
 python src/web_app.py --port 9000 --no-browser
 ```
-Jalankan dari root proyek. Jika tampilan tidak berubah setelah update, tekan Ctrl+F5.
-
+- Jalankan dari root proyek.
 - **Klik kiri** membuka sel, **klik kanan** (atau tekan lama di layar sentuh) memasang flag.
 - Tiap sel tertutup menampilkan peluang bom dalam persen (angka kecil di pojok kanan bawah;
   **merah 100** = pasti bom). Panel di samping papan menampilkan rincian perhitungan Bayes
