@@ -52,8 +52,7 @@ dataset bisa dipakai langsung tanpa konversi kode.
   Ini yang membuat jendela 5x5 di dataset (yang memuat sel di luar papan) aman diproses.
 - Konstanta didefinisikan satu kali di `src/bayesian_solver.py`; modul lain meng-import-nya,
   dan antarmuka web menerima kodenya dari server (`codes` pada `/api/state`).
-- Kode lama (tertutup `-2`, bom `-1`) **tidak lagi berlaku**. File board atau CSV yang dibuat
-  dengan encoding lama harus diubah: `-2` -> `-1` untuk sel tertutup, dan `-1` -> `-4` untuk bom.
+- `-2` -> `-1` untuk sel tertutup, dan `-1` -> `-4` untuk bom.
 
 ### Memuat dataset Kaggle
 ```python
