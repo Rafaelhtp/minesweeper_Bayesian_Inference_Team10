@@ -46,14 +46,6 @@ examples/                contoh board manual
 Encoding program **disamakan dengan dataset Kaggle** (`minesweeper_dataset`), sehingga baris
 dataset bisa dipakai langsung tanpa konversi kode.
 
-| Makna | Dataset Kaggle | Program |
-|---|---|---|
-| Sel tertutup | `-1` | `-1` (`COVERED`) |
-| Di luar papan | `-2` | `-2` (`OUT_OF_BOARD`) |
-| Sel terbuka (jumlah ranjau di sekitarnya) | `0..6` (dataset) | `0..8` |
-| Bendera | tidak ada | `-3` (`FLAGGED`) |
-| Bom (ground truth / bom yang meledak) | tidak ada | `-4` (`MINE`, kode internal) |
-
 - `game_state` memakai `-1`, `-2`, `-3`, dan `0..8`.
 - `board_values` (ground truth) memakai `-4` = bom dan `0..8` = jumlah bom tetangga.
 - Sel `-2` tidak pernah dianggap tertutup, clue, atau flag, sehingga solver mengabaikannya.
