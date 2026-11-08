@@ -24,11 +24,11 @@ from typing import Any, Dict, Optional
 import numpy as np
 
 try:
-    from .minesweeper_app import MinesweeperGame, COVERED, FLAGGED, MINE
+    from .minesweeper_app import MinesweeperGame, COVERED, FLAGGED, MINE, OUT_OF_BOARD
     from .bayesian_solver import BayesianMinesweeperSolver
     from .explain import explain
 except ImportError:  # dijalankan langsung: python src/web_app.py
-    from minesweeper_app import MinesweeperGame, COVERED, FLAGGED, MINE
+    from minesweeper_app import MinesweeperGame, COVERED, FLAGGED, MINE, OUT_OF_BOARD
     from bayesian_solver import BayesianMinesweeperSolver
     from explain import explain
 
@@ -129,6 +129,10 @@ class Session:
             "started": self.started,
             "elapsed": min(elapsed, 999),
             "state": g.game_state.tolist(),
+            # kode encoding dikirim dari Python agar frontend tidak perlu
+            # menulis angka literal (sumber tunggal: bayesian_solver.py)
+            "codes": {"covered": COVERED, "flagged": FLAGGED,
+                      "mine": MINE, "out": OUT_OF_BOARD},
             "exploded": None,
             "mine_cells": [],
         }

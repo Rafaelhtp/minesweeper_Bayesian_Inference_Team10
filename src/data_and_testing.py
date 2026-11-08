@@ -27,11 +27,11 @@ import seaborn as sns
 # Import komponen dari proyek kita
 try:
     from .minesweeper_app import (MinesweeperGame, COVERED, FLAGGED, MINE,
-                                  parse_board_text)
+                                  OUT_OF_BOARD, parse_board_text)
     from .bayesian_solver import BayesianMinesweeperSolver
 except ImportError:  # dijalankan langsung: python src/data_and_testing.py
     from minesweeper_app import (MinesweeperGame, COVERED, FLAGGED, MINE,
-                                 parse_board_text)
+                                 OUT_OF_BOARD, parse_board_text)
     from bayesian_solver import BayesianMinesweeperSolver
 
 # Opsional: ms_toollib
@@ -42,6 +42,14 @@ except ImportError:
     HAS_MS_TOOLLIB = False
 
 
+# Kolom fitur dataset Kaggle: jendela 5x5 di sekitar sel target (sel tengah
+# tidak ada). Urutan baris-demi-baris: cell_-2_-2, cell_-2_-1, ..., cell_2_2.
+KAGGLE_CELL_COLUMNS: List[str] = [
+    f"cell_{dr}_{dc}"
+    for dr in range(-2, 3) for dc in range(-2, 3) if not (dr == 0 and dc == 0)
+]
+
+
 class DatasetLoader:
     """Kelas untuk mengurus input manual dan parsing dataset eksternal."""
 
@@ -50,9 +58,9 @@ class DatasetLoader:
         """
         Mengubah string grid/teks menjadi format standar NumPy.
         Simbol (sama dengan `parse_board_text`):
-          - '?', '_', '-2' = tertutup      - 'F', '-3' = flag
-          - '0'..'8'       = clue          - 'M', '*', '-1' = bom (ground truth)
-          - '# mines=N'    = total bom
+          - '?', '_', '-1' = tertutup      - 'F', '-3' = flag
+          - '0'..'8'       = clue          - 'M', '*', '-4' = bom (ground truth)
+          - '-2'           = di luar papan - '# mines=N'    = total bom
         `board_values` = None bila tidak ada simbol bom.
         """
         game_state, board_values, parsed_mines = parse_board_text(board_text)
@@ -74,10 +82,16 @@ class DatasetLoader:
                 df = pd.read_csv(file_path_or_df)
             elif file_path_or_df.endswith('.json'):
                 df = pd.read_json(file_path_or_df)
+            elif file_path_or_df.endswith('.xlsx'):
+                return DatasetLoader.from_kaggle_dataset(file_path_or_df)
             else:
-                raise ValueError("Format file harus .csv atau .json")
+                raise ValueError("Format file harus .csv, .json, atau .xlsx")
         else:
             df = file_path_or_df
+
+        # Format dataset Kaggle (kolom cell_R_C + global_density + safe)
+        if all(col in df.columns for col in KAGGLE_CELL_COLUMNS):
+            return DatasetLoader.from_kaggle_dataset(df)
 
         results = []
         for _, row in df.iterrows():
@@ -109,6 +123,104 @@ class DatasetLoader:
                 "total_mines": int(mines)
             })
             
+        return results
+
+    @staticmethod
+    def _read_kaggle_frame(source: Union[str, pd.DataFrame],
+                           nrows: Optional[int] = None) -> pd.DataFrame:
+        """Baca CSV / XLSX (semua sheet 'Data*') / DataFrame dataset Kaggle."""
+        if isinstance(source, str):
+            if source.endswith('.xlsx'):
+                xls = pd.ExcelFile(source)
+                parts, got = [], 0
+                for name in xls.sheet_names:
+                    if not name.startswith('Data'):
+                        continue
+                    left = None if nrows is None else nrows - got
+                    if left is not None and left <= 0:
+                        break
+                    part = xls.parse(name, nrows=left)
+                    parts.append(part)
+                    got += len(part)
+                if not parts:
+                    raise ValueError("Tidak ada sheet 'Data_*' di file xlsx.")
+                return pd.concat(parts, ignore_index=True)
+            if source.endswith('.csv'):
+                return pd.read_csv(source, nrows=nrows)
+            raise ValueError("Format file harus .csv atau .xlsx")
+        return source if nrows is None else source.head(nrows)
+
+    @staticmethod
+    def kaggle_arrays(source: Union[str, pd.DataFrame],
+                      nrows: Optional[int] = None
+                      ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Versi vektor (cepat) untuk pelatihan model.
+
+        Returns
+        -------
+        cells   : int array (n, 24), urutan = KAGGLE_CELL_COLUMNS
+                  (-2 luar papan, -1 tertutup, 0..8 terbuka)
+        density : float array (n,)  global_density (NaN bila kolom tidak ada)
+        safe    : int array (n,)    label dataset, 1 = aman, 0 = bom (-1 bila tak ada)
+        """
+        df = DatasetLoader._read_kaggle_frame(source, nrows)
+        missing = [c for c in KAGGLE_CELL_COLUMNS if c not in df.columns]
+        if missing:
+            raise ValueError(f"Kolom dataset tidak lengkap, contoh: {missing[:3]}")
+        cells = df[KAGGLE_CELL_COLUMNS].to_numpy(dtype=int)
+        bad = set(np.unique(cells).tolist()) - set(range(-2, 9))
+        if bad:
+            raise ValueError(f"Nilai sel tidak dikenal untuk dataset: {sorted(bad)}")
+        density = (df['global_density'].to_numpy(dtype=float)
+                   if 'global_density' in df.columns else np.full(len(df), np.nan))
+        safe = (df['safe'].to_numpy(dtype=int)
+                if 'safe' in df.columns else np.full(len(df), -1))
+        return cells, density, safe
+
+    @staticmethod
+    def from_kaggle_dataset(source: Union[str, pd.DataFrame],
+                            nrows: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Memuat dataset Kaggle `minesweeper_dataset` (CSV, XLSX hasil rapi, atau
+        DataFrame) TANPA konversi kode, karena encoding program sudah sama:
+            -1 = tertutup, -2 = di luar papan, 0..8 = terbuka (dataset: 0..6).
+
+        Tiap baris dataset adalah jendela 5x5 di sekitar satu sel target.
+        Sel tengah (target) tidak ada di kolom dataset, jadi di `game_state`
+        diisi COVERED (target memang belum diketahui pemain).
+
+        Untuk .xlsx, semua sheet berawalan 'Data' dibaca berurutan (sheet 'Info'
+        dilewati). Pakai `nrows` untuk membatasi jumlah baris karena file
+        lengkap berisi 1,36 juta baris.
+
+        Tiap elemen hasil:
+            game_state     : np.ndarray 5x5
+            board_values   : None (posisi bom asli tidak diketahui)
+            safe           : label dataset (1 = aman, 0 = bom)
+            global_density : kepadatan bom seluruh papan
+            total_mines    : PERKIRAAN = round(global_density * jumlah sel dalam
+                             papan di jendela), minimal 1. Ukuran papan asli
+                             tidak ada di dataset, jadi ini hanya aproksimasi.
+        """
+        cells, density, labels = DatasetLoader.kaggle_arrays(source, nrows)
+
+        # sisipkan sel target (indeks 12 pada jendela 5x5 yang diratakan)
+        windows = np.insert(cells, 12, COVERED, axis=1).reshape(-1, 5, 5)
+
+        results: List[Dict[str, Any]] = []
+        for i in range(len(cells)):
+            win = windows[i].copy()
+            n_in_board = int(np.sum(win != OUT_OF_BOARD))
+            mines = (max(1, int(round(density[i] * n_in_board)))
+                     if not np.isnan(density[i]) else 1)
+            results.append({
+                "board_values": None,
+                "game_state": win,
+                "total_mines": mines,
+                "safe": int(labels[i]),
+                "global_density": float(density[i]),
+            })
         return results
 
     @staticmethod
@@ -228,8 +340,14 @@ class BenchmarkEvaluator:
         }
 
     def run_benchmark(self, num_games_per_diff: int = 10, seed: int = 0,
-                      output_csv: Optional[str] = "benchmark_results.csv") -> pd.DataFrame:
-        """Jalankan benchmark untuk semua tingkat kesulitan."""
+                      output_csv: Optional[str] = "benchmark_results.csv",
+                      extra_solvers: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
+        """
+        Jalankan benchmark untuk semua tingkat kesulitan.
+
+        extra_solvers: {label: solver} tambahan (mis. NeuralWindowSolver),
+        dimainkan pada papan yang sama dengan solver lain.
+        """
         configs = {
             "Beginner": {"rows": 9, "cols": 9, "mines": 10},
             "Intermediate": {"rows": 16, "cols": 16, "mines": 40},
@@ -240,6 +358,8 @@ class BenchmarkEvaluator:
             "Baseline (Random)": RandomGuessSolver(),
             "Our Method (Bayesian)": BayesianMinesweeperSolver()
         }
+        if extra_solvers:
+            solvers.update(extra_solvers)
         
         self.results.clear()
         total_runs = len(configs) * len(solvers) * num_games_per_diff
@@ -286,6 +406,10 @@ class BenchmarkEvaluator:
         fig, axes = plt.subplots(1, 3, figsize=(20, 6))
         
         palette = {"Baseline (Random)": "#E57373", "Our Method (Bayesian)": "#4CAF50"}
+        extra_colors = ["#42A5F5", "#FFB74D", "#BA68C8", "#4DB6AC"]
+        for name in summary_df["solver"].unique():
+            if name not in palette:
+                palette[name] = extra_colors[len(palette) % len(extra_colors)]
         
         # 1. Win Rate
         sns.barplot(

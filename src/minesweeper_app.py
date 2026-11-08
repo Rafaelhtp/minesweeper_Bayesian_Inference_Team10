@@ -4,9 +4,14 @@ minesweeper_app.py
 
 Complete Minesweeper game engine + Bayesian AI visualization + interactive UI.
 
-Mengikuti arsitektur arXiv:2212.10446:
-    board_values : 2D array, -1 = mine, 0..8 = clue counts
-    game_state   : 2D array, -2 = covered, -3 = flagged, 0..8 = revealed clue
+Encoding disamakan dengan dataset Kaggle minesweeper_dataset:
+    game_state   : 2D array, -1 = covered, -2 = di luar papan, -3 = flagged
+                   (hanya program), 0..8 = revealed clue
+    board_values : 2D array, -4 = mine (kode internal, ground truth),
+                   0..8 = clue counts
+    Catatan: -4 hanya muncul di board_values (dan di game_state sesaat setelah
+    pemain menginjak bom). Kode ini sengaja dipilih agar tidak bentrok dengan
+    kode dataset (-1, -2) maupun flag (-3).
 
 Komponen:
     - class MinesweeperGame  : engine permainan (murni Python + numpy)
@@ -59,18 +64,22 @@ except ImportError:
     HAS_IPYWIDGETS = False
 
 # --- solver (proyek lokal) ---
+# Konstanta encoding didefinisikan SATU kali di bayesian_solver.py.
 try:
-    from .bayesian_solver import BayesianMinesweeperSolver  # type: ignore
+    from .bayesian_solver import (BayesianMinesweeperSolver, COVERED,  # type: ignore
+                                  FLAGGED, OUT_OF_BOARD)
 except ImportError:  # dijalankan langsung: python src/minesweeper_app.py
-    from bayesian_solver import BayesianMinesweeperSolver  # type: ignore
+    from bayesian_solver import (BayesianMinesweeperSolver, COVERED,  # type: ignore
+                                 FLAGGED, OUT_OF_BOARD)
 
 
 # --------------------------------------------------------------------------- #
-# Constants (encoding sesuai arXiv:2212.10446)
+# Constants (encoding sesuai dataset Kaggle; lihat bayesian_solver.py)
 # --------------------------------------------------------------------------- #
-COVERED: int = -2
-FLAGGED: int = -3
-MINE: int = -1
+# COVERED = -1, OUT_OF_BOARD = -2, FLAGGED = -3 di-import dari bayesian_solver.
+# MINE hanya penanda internal untuk ground truth (board_values) dan sel bom yang
+# meledak; nilainya harus beda dari -1/-2/-3 agar tidak ambigu dengan dataset.
+MINE: int = -4
 
 # warna klasik Minesweeper untuk angka 1..8 (dipakai di plot kiri)
 NUMBER_COLORS = {
@@ -102,7 +111,7 @@ def _neighbors(r: int, c: int, rows: int, cols: int) -> List[Tuple[int, int]]:
 
 
 def _compute_neighbor_counts(raw: np.ndarray) -> np.ndarray:
-    """Hitung jumlah bom tetangga untuk setiap sel; sel bom tetap -1."""
+    """Hitung jumlah bom tetangga untuk setiap sel; sel bom tetap MINE (-4)."""
     rows, cols = raw.shape
     counts = np.zeros((rows, cols), dtype=int)
     for r in range(rows):
@@ -126,9 +135,10 @@ def parse_board_text(
 
     Simbol (dipisah spasi/koma):
         0..8            = sel terungkap
-        ?  _  -2        = tertutup (tidak diketahui)
-        F  -3           = flag
-        M  *  -1        = bom (ground truth; sel ini tetap tertutup di state)
+        ?  _  -1        = tertutup (tidak diketahui)   [kode dataset: -1]
+        -2              = di luar papan                [kode dataset: -2]
+        F  -3           = flag                         [hanya program]
+        M  *  -4        = bom (ground truth; sel ini tetap tertutup di state)
         '# mines=N'     = total bom (opsional)
 
     Returns
@@ -155,9 +165,11 @@ def parse_board_text(
             tu = tok.upper()
             if tu in ("F", "-3"):
                 row.append(FLAGGED)
-            elif tu in ("?", "_", "-2"):
+            elif tu in ("?", "_", "-1"):
                 row.append(COVERED)
-            elif tu in ("M", "*", "-1"):
+            elif tu == "-2":
+                row.append(OUT_OF_BOARD)
+            elif tu in ("M", "*", "-4"):
                 row.append(MINE)
             else:
                 try:
@@ -220,8 +232,22 @@ class MinesweeperGame:
         self._move_counter = 0
 
     def load_game(self, start_row: int, start_col: int,
-                  rng: Optional[np.random.Generator] = None) -> None:
-        """Letakkan bom secara random, dijamin first-click aman."""
+                  rng: Optional[np.random.Generator] = None,
+                  first_click: str = "safe") -> None:
+        """
+        Letakkan bom secara random setelah klik pertama.
+
+        first_click:
+            "safe" (default) = hanya sel yang diklik dijamin bukan bom; sel itu
+                               boleh bernilai angka > 0. Ini aturan versi final
+                               jurnal (arXiv:2212.10446, Bab 5.6.2.1) dan yang
+                               dipakai solver CSP pembanding.
+            "zero"           = sel yang diklik dan semua tetangganya bebas bom,
+                               sehingga klik pertama pasti bernilai 0 (versi
+                               awal jurnal / Minesweeper Google).
+        """
+        if first_click not in ("safe", "zero"):
+            raise ValueError("first_click harus 'safe' atau 'zero'.")
         if not (0 <= start_row < self.num_rows and 0 <= start_col < self.num_cols):
             raise ValueError("start_row/start_col di luar board.")
 
@@ -237,8 +263,9 @@ class MinesweeperGame:
         self._move_counter = 0
 
         forbidden = {(start_row, start_col)}
-        for nr, nc in _neighbors(start_row, start_col, self.num_rows, self.num_cols):
-            forbidden.add((nr, nc))
+        if first_click == "zero":
+            for nr, nc in _neighbors(start_row, start_col, self.num_rows, self.num_cols):
+                forbidden.add((nr, nc))
 
         candidates = [
             (r, c) for r in range(self.num_rows) for c in range(self.num_cols)
@@ -288,7 +315,7 @@ class MinesweeperGame:
             arr = np.array(board_values, dtype=int)
             if arr.ndim != 2:
                 raise ValueError("board_values harus 2D.")
-            if not set(np.unique(arr).tolist()).issubset(set(range(-1, 9))):
+            if not set(np.unique(arr).tolist()).issubset(set(range(0, 9)) | {MINE}):
                 raise ValueError("board_values mengandung nilai tak valid.")
             self.has_ground_truth = True
             self.num_rows, self.num_cols = arr.shape
@@ -436,6 +463,8 @@ class MinesweeperGame:
                     row_tokens.append("  F ")
                 elif v == MINE:
                     row_tokens.append("  * ")
+                elif v == OUT_OF_BOARD:
+                    row_tokens.append("  # ")
                 elif v == 0:
                     row_tokens.append("  . ")
                 else:
@@ -478,6 +507,8 @@ def plot_board_and_probabilities(
                 face, txt, txt_color = "#9E9E9E", "⚑", "#D32F2F"
             elif v == MINE:
                 face, txt, txt_color = "#E57373", "✸", "black"
+            elif v == OUT_OF_BOARD:
+                face, txt, txt_color = "#424242", "", "white"
             elif v == 0:
                 face, txt, txt_color = "#E0E0E0", "", "black"
             else:
@@ -569,7 +600,7 @@ def run_interactive_ui(
 
     manual_box = widgets.Textarea(
         value="",
-        placeholder="Tempel board manual:\n? = covered, F = flag, 0..8 = clue, M = bom (opsional)\nBaris '# mines=N' menentukan total bom.",
+        placeholder="Tempel board manual:\n? = covered (-1), -2 = di luar papan, F = flag (-3), 0..8 = clue, M = bom (opsional)\nBaris '# mines=N' menentukan total bom.",
         description="Board:",
         layout=widgets.Layout(width="100%", height="140px"),
         disabled=True,

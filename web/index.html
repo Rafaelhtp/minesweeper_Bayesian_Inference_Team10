@@ -228,8 +228,8 @@ function render(){
   for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
     const v=S.state[r][c], key=r+','+c; let cls='cell', inner='';
     if(v>=0){cls+=' r'+(v>0?' n'+v:''); inner=v>0?v:'';}
-    else if(v===-1){cls+=' x'; inner=SPR.mine;}
-    else if(v===-3){
+    else if(v===S.codes.mine){cls+=' x'; inner=SPR.mine;}
+    else if(v===S.codes.flagged){
       cls+=' f'; inner=SPR.flag;
       if(lost && !mineSet.has(key)) cls+=' wrong';
     }else{ // tertutup
@@ -238,7 +238,7 @@ function render(){
     }
     if(hint && hint.r===r && hint.c===c && !over) cls+=' hint';
     let style='';
-    const pv=(probs&&v===-2&&!over)?probs[r][c]:null;
+    const pv=(probs&&v===S.codes.covered&&!over)?probs[r][c]:null;
     // kotak tertutup tetap polos; warna heatmap hanya pada ANGKA persennya (angka sama = warna sama)
     if((showProb||showHeat) && pv!=null){
       const pr=Math.round(pv*100);
@@ -339,7 +339,7 @@ grid.addEventListener('pointerdown',e=>{
 ['pointerup','pointerleave','pointercancel'].forEach(ev=>grid.addEventListener(ev,()=>clearTimeout(pressTimer)));
 grid.addEventListener('mouseover',e=>{
   const p=cellOf(e); if(!p||!probs||S.status!=='PLAYING')return;
-  const v=probs[p.r][p.c]; if(v!=null&&S.state[p.r][p.c]===-2){ $('msg').textContent=`(${p.r},${p.c}) P(bom) = ${(v*100).toFixed(1)}%`;
+  const v=probs[p.r][p.c]; if(v!=null&&S.state[p.r][p.c]===S.codes.covered){ $('msg').textContent=`(${p.r},${p.c}) P(bom) = ${(v*100).toFixed(1)}%`;
     if(showCalc){sel=p;paintCalc();} }
 });
 

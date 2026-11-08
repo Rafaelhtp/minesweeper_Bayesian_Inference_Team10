@@ -5,12 +5,18 @@ bayesian_solver.py
 Standalone implementation of a Minesweeper AI solver using a hybrid of
 Deterministic Logic (Single Point Strategy / SPS) and Bayesian Inference.
 
-Encoding Convention (arXiv:2212.10446)
---------------------------------------
+Encoding Convention (disamakan dengan dataset Kaggle minesweeper_dataset)
+------------------------------------------------------------------------
 - game_state (np.ndarray, dtype=int):
-    *  0..8 : uncovered cell showing adjacent mine count.
-    *   -2  : covered (unknown) cell.
-    *   -3  : flagged mine (treated as known mine).
+    *  0..8 : uncovered cell showing adjacent mine count
+               (pada dataset hanya muncul 0..6).
+    *   -1  : covered (unknown) cell            -> sama dengan dataset.
+    *   -2  : outside the board (di luar papan) -> sama dengan dataset.
+               Sel bernilai -2 tidak pernah dianggap tertutup, clue, maupun
+               flag, sehingga solver mengabaikannya.
+    *   -3  : flagged mine (treated as known mine). Dataset tidak punya
+               flag; kode -3 hanya dipakai program dan tidak bentrok dengan
+               nilai dataset.
 
 - total_mines (int): total number of mines on the board.
 
@@ -50,13 +56,14 @@ from typing import Dict, List, Optional, Set, Tuple
 
 import numpy as np
 
-__all__ = ["BayesianMinesweeperSolver"]
+__all__ = ["BayesianMinesweeperSolver", "COVERED", "OUT_OF_BOARD", "FLAGGED"]
 
 # --------------------------------------------------------------------------- #
 # Encoding constants
 # --------------------------------------------------------------------------- #
-COVERED: int = -2
-FLAGGED: int = -3
+COVERED: int = -1       # sel tertutup            (dataset: -1)
+OUT_OF_BOARD: int = -2  # di luar papan           (dataset: -2)
+FLAGGED: int = -3       # bendera (hanya program) (dataset: tidak ada)
 
 
 # Search limits for exact enumeration of one border component.
@@ -105,9 +112,9 @@ class BayesianMinesweeperSolver:
 
         Returns
         -------
-        bordering   : covered cells (-2) adjacent to at least one clue (1..8)
+        bordering   : covered cells (-1) adjacent to at least one clue (1..8)
         constraints : clue cells (1..8) adjacent to at least one covered cell
-        non_border  : covered cells (-2) with no adjacent clue (interior cells)
+        non_border  : covered cells (-1) with no adjacent clue (interior cells)
         """
         rows, cols = game_state.shape
         bordering: Set[Tuple[int, int]] = set()
@@ -578,18 +585,18 @@ class BayesianMinesweeperSolver:
 # --------------------------------------------------------------------------- #
 if __name__ == "__main__":
     # Partially revealed 9x9 Beginner board.
-    #   -2  = covered
+    #   -1  = covered
     #   0..8 = revealed clue
     sample = np.array([
-        [ 0,  0,  1, -2, -2, -2, -2, -2, -2],
-        [ 0,  0,  1, -2, -2, -2, -2, -2, -2],
-        [ 1,  1,  1, -2, -2, -2, -2, -2, -2],
-        [ 1,  2,  2, -2, -2, -2, -2, -2, -2],
-        [ 1,  2, -2, -2, -2, -2, -2, -2, -2],
-        [ 1,  2, -2, -2, -2, -2, -2, -2, -2],
-        [-2, -2, -2, -2, -2, -2, -2, -2, -2],
-        [-2, -2, -2, -2, -2, -2, -2, -2, -2],
-        [-2, -2, -2, -2, -2, -2, -2, -2, -2],
+        [ 0,  0,  1, -1, -1, -1, -1, -1, -1],
+        [ 0,  0,  1, -1, -1, -1, -1, -1, -1],
+        [ 1,  1,  1, -1, -1, -1, -1, -1, -1],
+        [ 1,  2,  2, -1, -1, -1, -1, -1, -1],
+        [ 1,  2, -1, -1, -1, -1, -1, -1, -1],
+        [ 1,  2, -1, -1, -1, -1, -1, -1, -1],
+        [-1, -1, -1, -1, -1, -1, -1, -1, -1],
+        [-1, -1, -1, -1, -1, -1, -1, -1, -1],
+        [-1, -1, -1, -1, -1, -1, -1, -1, -1],
     ], dtype=int)
     total_mines = 10  # Beginner preset
 
@@ -617,7 +624,7 @@ if __name__ == "__main__":
     for r in range(sample.shape[0]):
         row_str = f"  {r:>2}  "
         for c in range(sample.shape[1]):
-            if sample[r, c] != -2:
+            if sample[r, c] != COVERED:
                 row_str += f"{'  --':>8}"
             else:
                 row_str += f"{prob_matrix[r, c] * 100:>7.2f}%"
